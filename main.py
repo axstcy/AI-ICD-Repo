@@ -89,20 +89,29 @@ ICD_DATA = load_icd_data()
 def score(query, item):
     q = normalize(query)
     title = normalize(item.get("title"))
-    chapter = normalize(item.get("chapter_title"))
-    block = normalize(item.get("block_title"))
     code = normalize(item.get("code"))
 
     total = 0.0
 
-    if q in title:
-        total += 5.0
-    if q in block:
-        total += 1.5
-    if q == code:
-        total += 10.0
+    # Strong exact match boost
+    if q == title:
+        total += 10
 
+    # Partial match
+    if q in title:
+        total += 6
+
+    # Prefer general/common ICD codes (J, A, etc.)
+    if code.startswith("j"):
+        total += 2
+
+    # Penalize very specific neonatal codes unless explicitly typed
+    if code.startswith("p"):
+        total -= 1
+
+    # Fuzzy match
     total += SequenceMatcher(None, q, title).ratio() * 3.0
+
     return total
 
 

@@ -93,7 +93,7 @@ def score(query, item):
 
     total = 0.0
 
-    # Strong exact match boost
+    # Exact match boost
     if q == title:
         total += 10
 
@@ -101,18 +101,23 @@ def score(query, item):
     if q in title:
         total += 6
 
-    # Prefer general/common ICD codes (J, A, etc.)
+    # Prefer general usable hospital codes (J, A, etc.)
     if code.startswith("j"):
         total += 2
 
-    # Penalize very specific neonatal codes unless explicitly typed
+    # Prefer more specific ICD codes (with decimal)
+    if "." in code:
+        total += 3
+
+    # Penalize neonatal codes slightly
     if code.startswith("p"):
         total -= 1
 
-    # Fuzzy match
+    # Fuzzy similarity
     total += SequenceMatcher(None, q, title).ratio() * 3.0
 
     return total
+
 
 
 @app.get("/")

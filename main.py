@@ -26,25 +26,57 @@ def normalize(text):
     return (text or "").lower().strip()
 
 
-def load_icd_data():
+def load_raw_bundle():
     with DATA_FILE.open("r", encoding="utf-8") as f:
-        bundle = json.load(f)
+        return json.load(f)
 
-    items = bundle.get("items", [])
 
+RAW_BUNDLE = load_raw_bundle()
+
+
+def extract_items(bundle):
+    if isinstance(bundle, dict):
+        if isinstance(bundle.get("items"), list):
+            return bundle["items"]
+        if isinstance(bundle.get("data"), list):
+            return bundle["data"]
+        return []
+    if isinstance(bundle, list):
+        return bundle
+    return []
+
+
+def load_icd_data():
+    items = extract_items(RAW_BUNDLE)
     cleaned = []
+
     for item in items:
-        code = item.get("code")
-        title = item.get("title")
+        if not isinstance(item, dict):
+            continue
+
+        code = (
+            item.get("code")
+            or item.get("code_no_asterisk")
+            or item.get("code_no_dot")
+            or ""
+        )
+        title = (
+            item.get("title")
+            or item.get("description")
+            or item.get("label")
+            or ""
+        )
+
+        code = str(code).strip()
+        title = str(title).strip()
 
         if code and title:
             cleaned.append(
                 {
                     "code": code,
                     "title": title,
-                    "chapter_title": item.get("chapter_title") or "",
-                    "block_title": item.get("block_title") or "",
-                    "is_terminal": item.get("is_terminal", False),
+                    "chapter_title": str(item.get("chapter_title") or "").strip(),
+                    "block_title": str(item.get("block_title") or "").strip(),
                 }
             )
 
@@ -76,9 +108,13 @@ def score(query, item):
 
 @app.get("/")
 def home():
+    raw_items = extract_items(RAW_BUNDLE)
     return {
         "status": "ICD API running",
+        "raw_items_count": len(raw_items),
         "records_loaded": len(ICD_DATA),
+        "raw_sample": raw_items[:2],
+        "cleaned_sample": ICD_DATA[:2],
     }
 
 

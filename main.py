@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from difflib import SequenceMatcher
 import json
+from pathlib import Path
 
 app = FastAPI()
 
@@ -14,9 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load WHO dataset
-with open("icd10_who_2019_clean.json", "r", encoding="utf-8") as f:
-    ICD_DATA = json.load(f)["items"]
+DATA_FILE = Path("icd10_who_2019_clean.json")
 
 
 class Query(BaseModel):
@@ -24,46 +23,86 @@ class Query(BaseModel):
 
 
 def normalize(text):
-    return text.lower().strip()
+    return (text or "").lower().strip()
+
+
+def load_icd_data():
+    with DATA_FILE.open("r", encoding="utf-8") as f:
+        bundle = json.load(f)
+
+    items = bundle.get("items", [])
+
+    cleaned = []
+    for item in items:
+        code = item.get("code")
+        title = item.get("title")
+
+        if code and title:
+            cleaned.append(
+                {
+                    "code": code,
+                    "title": title,
+                    "chapter_title": item.get("chapter_title") or "",
+                    "block_title": item.get("block_title") or "",
+                    "is_terminal": item.get("is_terminal", False),
+                }
+            )
+
+    return cleaned
+
+
+ICD_DATA = load_icd_data()
 
 
 def score(query, item):
     q = normalize(query)
-    title = normalize(item["title"])
+    title = normalize(item.get("title"))
+    chapter = normalize(item.get("chapter_title"))
+    block = normalize(item.get("block_title"))
+    code = normalize(item.get("code"))
 
-    score = 0
+    total = 0.0
 
     if q in title:
-        score += 5
+        total += 5.0
+    if q in block:
+        total += 1.5
+    if q == code:
+        total += 10.0
 
-    score += SequenceMatcher(None, q, title).ratio() * 3
-
-    return score
+    total += SequenceMatcher(None, q, title).ratio() * 3.0
+    return total
 
 
 @app.get("/")
 def home():
     return {
         "status": "ICD API running",
-        "records": len(ICD_DATA)
+        "records_loaded": len(ICD_DATA),
     }
 
 
 @app.post("/predict")
 def predict(q: Query):
+    query_text = normalize(q.text)
+
+    if not query_text:
+        return {"suggestions": []}
+
     ranked = sorted(
         ICD_DATA,
-        key=lambda x: score(q.text, x),
-        reverse=True
+        key=lambda item: score(query_text, item),
+        reverse=True,
     )
 
-    best = ranked[0]
+    best = ranked[:1]
 
     return {
         "suggestions": [
             {
-                "code": best["code"],
-                "description": best["title"]
+                "code": item["code"],
+                "description": item["title"],
             }
+            for item in best
         ]
     }
